@@ -1,0 +1,119 @@
+---
+title: "Decafe - kchouse"
+author: "Jin Kweon"
+date: "2/9/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(plyr)
+library(stats)
+library(factoextra)
+library(rpart)
+library(rpart.plot)
+```
+
+#https://www.kaggle.com/harlfoxem/housesalesprediction/data
+```{R}
+house <- read.csv("kc_house_data.csv")
+
+
+house <- house[,-17] #Remove zipcode. 
+
+#summary
+str(house)
+summary(house) #sqft living and lots are quite different with the ones in 15 (after renovated)
+
+
+
+#Bedroom number check
+which(house$bedrooms > 5) #bedrooms > 5
+which(house$bedrooms > 7)
+
+
+manybedid <- which(house$bedrooms > 8)
+write.csv(house[manybedid,], file = "kk.csv") #all are somewhat weird... when I see the sizes of the houses.... 
+house$bedrooms[manybedid] <- median(house$bedrooms) #assign median instead of mean, to prevent central tendency
+
+
+
+#Make the data simple -> remove after the date (starting with T)
+house$date <- substr(house$date, 1, 8)
+
+
+#Make simpler -> since price column is prediction target (as what the kaggle said), previous living and lot square feets data not needed.
+house <- house[,-c(6, 7)]
+
+
+#Another inspection -> observations 3915, 7253, and 9255 are suspcious
+summary(house)
+model1 <- lm(price ~., data = house[, -c(1,2)])
+plot(cooks.distance(model1))
+plot(model1)
+
+
+summary(house)
+house <- house[-c(3915, 7253, 9255), ] #Decide to remove them
+
+
+model2 <- lm(price ~., data = house[, -c(1,2)])
+plot(cooks.distance(model2))
+plot(model2)
+
+
+
+#See how the renovation affects the price -> yr_renovated column has a lot of empty data.
+house$yr_renovated <- as.factor(house$yr_renovated) #change to factor for inspection
+summary(house$yr_renovated)
+prop.table(table(house$yr_renovated)) #Around 95.8 percents have 0 for yr_renovated.
+
+plot(aggregate(house$price, by = list(house$yr_renovated), mean), xlab = "yr renovated", ylab = "price",
+     main = "yr renovated v.s. price") #I can see a clear trend that yr_renovated is proportional to price.
+
+#Conclusion: yr renovated might be a important factor for deciding price, assumed the data is correct. 
+
+
+
+#Anova check 
+anova(model2) #but, here, yr_renovated column does not look significant factor to decdie the price... -> suspicious
+#collinearity issue...????
+
+
+#Another inspection 
+house$yr_renovated <- as.numeric(as.character(house$yr_renovated)) #change to numeric for inspection
+summary(lm(yr_renovated ~., data = house[, -c(1:3)]))
+anova(lm(yr_renovated ~., data = house[, -c(1:3)]))
+#Seems like there is a lot of collinearity issue .... so, it is better for me to remove the column yr_renovated,,,, 
+
+
+house2 <- prcomp(house[, -c(1,2)], scale = TRUE)
+fviz_pca_var(house2,
+             col.var = "contrib", # Color by contributions to the PC
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             )
+#Also, as this can be observec in pca circle, yr_renovated does not contribute that much... 
+#And, sqft_lot15 can be calculated using sqft_above, sqft_living15, and sqft_basement... 
+
+#So, I will take out yr_renovated and sqft_lot 15...
+
+newhouse <- house[, -c(14, 18)]
+
+
+#Tree classification -> to know which one has to do with price the most...
+trees <- rpart(price ~., data = newhouse[,-c(1,2)])
+
+rpart.plot(trees)
+
+
+#Extract cleaned...
+write.csv(newhouse, "newhouse.csv")
+```
+
+
+
+
+
+
